@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"> <!-- user-scalable=noを追加 -->
+    <title>分子運動シミュレーション (タッチ対応)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f0f0f0;
+            font-family: sans-serif;
+             /* タッチ操作での意図しない選択やメニュー表示を防ぐ */
+            -webkit-user-select: none; /* Safari */
+            -ms-user-select: none; /* IE 10+ */
+            user-select: none;
+            -webkit-touch-callout: none; /* iOS Safari */
+        }
+        canvas {
+            border: 1px solid black;
+            background-color: #ffffff;
+            cursor: grab;
+             /* タッチ操作時のデフォルト動作（スクロールなど）を抑制 */
+             touch-action: none;
+        }
+        canvas.grabbing {
+            cursor: grabbing;
+        }
+        .controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 5px;
+            width: 240px; /* 少し広げる */
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+            max-height: 95vh;
+            overflow-y: auto;
+            font-size: 0.9em;
+        }
+        .control-group {
+            margin-bottom: 15px;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 10px;
+        }
+        .control-group:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        .controls label {
+            display: inline-block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            vertical-align: middle;
+        }
+        .controls .inline-label {
+             font-weight: normal;
+        }
+        .controls input[type="number"] {
+            width: 55px;
+            margin-left: 5px;
+            vertical-align: middle;
+            padding: 2px;
+        }
+        .controls input[type="checkbox"] {
+            margin-right: 3px;
+            vertical-align: middle;
+        }
+        .controls button {
+            padding: 8px 15px;
+            margin-top: 10px;
+            cursor: pointer;
+            width: 100%;
+        }
+        .info {
+            margin-top: 10px;
+        }
+        .group-settings h4, .physics-settings h4, .display-settings h4, .heat-cool-settings h4 {
+             margin-top: 0;
+             margin-bottom: 8px;
+             padding-bottom: 3px;
+             border-bottom: 1px dashed #aaa;
+        }
+        .group-controls {
+            margin-bottom: 10px;
+            padding-left: 5px;
+        }
+        .group-controls h5 {
+            margin-bottom: 5px;
+            display: flex;
+            align-items: center;
+        }
+        .group-controls label {
+            font-weight: normal;
+            display: block;
+            margin-bottom: 3px;
+        }
+        .group-controls input[type="color"] {
+            width: 25px;
+            height: 18px;
+            border: 1px solid #ccc;
+            padding: 0 1px;
+            cursor: pointer;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+        .group-controls input[type="number"] {
+            width: 45px;
+        }
+        .physics-settings, .display-settings, .heat-cool-settings {
+            margin-top: 15px;
+        }
+        .warning {
+             font-size: 0.8em;
+             color: #c00;
+             margin-top: 5px;
+        }
+        .instruction {
+             font-size: 0.85em;
+             color: #333;
+             margin-top: 5px;
+             line-height: 1.3;
+        }
+        .mode-buttons {
+             display: flex;
+             justify-content: space-between;
+             margin-top: 8px;
+        }
+        .mode-buttons button {
+            width: 31%; /* 3つのボタンを均等に配置 */
+            padding: 5px;
+            margin-top: 0;
+            font-size: 0.85em;
+            border: 1px solid #ccc;
+            background-color: #f0f0f0;
+        }
+         .mode-buttons button.active {
+             background-color: #a0d0ff; /* アクティブなボタンの色 */
+             border-color: #66aaff;
+             font-weight: bold;
+         }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <div class="control-group">
+            <h4>基本設定</h4>
+            <label for="numMolecules">分子数:</label>
+            <input type="number" id="numMolecules" value="30" min="1" max="200">
+            <br>
+            <label for="maxSpeed">最大初速:</label>
+            <input type="number" id="maxSpeed" value="1.0" min="0.1" max="5" step="0.1">
+            <br>
+            <label for="restitution">反発係数:</label>
+            <input type="number" id="restitution" value="0.8" min="0" max="1" step="0.05">
+        </div>
+
+        <div class="control-group physics-settings">
+            <h4>物理設定</h4>
+            <div>
+                <input type="checkbox" id="gravityToggle">
+                <label for="gravityToggle" class="inline-label">重力ON</label>
+                <input type="number" id="gravityForce" value="0.05" min="0" max="1" step="0.01">
+            </div>
+            <div>
+                <input type="checkbox" id="interactionToggle">
+                <label for="interactionToggle" class="inline-label">分子間力ON</label>
+                <input type="number" id="interactionConst" value="0.5" min="-10" max="10" step="0.1">
+            </div>
+             <label for="interactionRange">作用距離:</label>
+             <input type="number" id="interactionRange" value="50" min="5" max="300" step="5">
+             <br>
+             <small>(正:斥力, 負:引力, 0:無効)</small>
+             <div class="warning" id="perfWarning" style="display: none;">分子間力の計算負荷が高いです</div>
+        </div>
+
+        <div class="control-group display-settings">
+            <h4>表示設定</h4>
+            <div>
+                <input type="checkbox" id="velocityVectorToggle">
+                <label for="velocityVectorToggle" class="inline-label">速度ベクトル表示</label>
+            </div>
+             <label for="vectorScale">ベクトル倍率:</label>
+             <input type="number" id="vectorScale" value="5" min="1" max="20" step="1">
+        </div>
+
+        <div class="control-group heat-cool-settings">
+            <h4>加熱/冷却設定</h4>
+             <div>
+                <input type="checkbox" id="heatCoolToggle" checked> <!-- デフォルトON -->
+                <label for="heatCoolToggle" class="inline-label">有効</label>
+            </div>
+            <label for="heatCoolRadius">影響半径:</label>
+            <input type="number" id="heatCoolRadius" value="40" min="5" max="150" step="5">
+            <br>
+            <label for="heatFactor">加熱係数:</label>
+            <input type="number" id="heatFactor" value="1.02" min="1.0" max="1.2" step="0.005">
+            <br>
+            <label for="coolFactor">冷却係数:</label>
+            <input type="number" id="coolFactor" value="0.98" min="0.8" max="1.0" step="0.005">
+
+             <!-- モード選択ボタンを追加 -->
+            <div class="mode-buttons">
+                 <button id="modeNoneBtn" class="active">通常</button>
+                 <button id="modeHeatBtn">加熱</button>
+                 <button id="modeCoolBtn">冷却</button>
+            </div>
+
+             <div class="instruction">
+                 スマホ: モードを選択して画面をタッチ & 移動<br>
+                 PC: [Shift]/[Ctrl] + マウス移動<br>
+                 (有効時、カーソル/タッチ位置に円表示)
+            </div>
+        </div>
+
+        <div class="control-group group-settings">
+            <h4>グループ設定</h4>
+            <div id="groupControlsContainer">
+                <!-- グループ設定はJSで動的に生成 -->
+            </div>
+        </div>
+
+        <div class="info">
+            温度 (平均KE): <span id="temperatureDisplay">N/A</span>
+        </div>
+
+        <button id="resetButton">リセット</button>
+         <p style="font-size:0.8em; color:#666; margin-top:10px;">
+            注意: 分子数や分子間力を有効にすると重くなります。
+            <br>分子をドラッグできます。
+        </p>
+    </div>
+
+    <canvas id="simulationCanvas"></canvas>
+
+<script>const canvas = document.getElementById('simulationCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // --- DOM要素取得 ---
+    const numMoleculesInput = document.getElementById('numMolecules');
+    const maxSpeedInput = document.getElementById('maxSpeed');
+    const restitutionInput = document.getElementById('restitution');
+    const gravityToggle = document.getElementById('gravityToggle');
+    const gravityForceInput = document.getElementById('gravityForce');
+    const interactionToggle = document.getElementById('interactionToggle');
+    const interactionConstInput = document.getElementById('interactionConst');
+    const interactionRangeInput = document.getElementById('interactionRange');
+    const velocityVectorToggle = document.getElementById('velocityVectorToggle');
+    const vectorScaleInput = document.getElementById('vectorScale');
+    const heatCoolToggle = document.getElementById('heatCoolToggle');
+    const heatCoolRadiusInput = document.getElementById('heatCoolRadius');
+    const heatFactorInput = document.getElementById('heatFactor');
+    const coolFactorInput = document.getElementById('coolFactor');
+    const modeNoneBtn = document.getElementById('modeNoneBtn');
+    const modeHeatBtn = document.getElementById('modeHeatBtn');
+    const modeCoolBtn = document.getElementById('modeCoolBtn');
+    const temperatureDisplay = document.getElementById('temperatureDisplay');
+    const resetButton = document.getElementById('resetButton');
+    const groupControlsContainer = document.getElementById('groupControlsContainer');
+    const perfWarning = document.getElementById('perfWarning');
+    
+    // --- グローバル設定 ---
+    let numMolecules = parseInt(numMoleculesInput.value);
+    let maxInitialSpeed = parseFloat(maxSpeedInput.value);
+    let restitution = parseFloat(restitutionInput.value);
+    let gravity = gravityToggle.checked ? parseFloat(gravityForceInput.value) : 0;
+    let interactionEnabled = interactionToggle.checked;
+    let interactionConstant = parseFloat(interactionConstInput.value);
+    let interactionRange = parseFloat(interactionRangeInput.value);
+    let interactionRangeSq = interactionRange * interactionRange;
+    let showVelocityVectors = velocityVectorToggle.checked;
+    let velocityVectorScale = parseFloat(vectorScaleInput.value);
+    let isHeatCoolEnabled = heatCoolToggle.checked;
+    let heatCoolRadius = parseFloat(heatCoolRadiusInput.value);
+    let heatCoolRadiusSq = heatCoolRadius * heatCoolRadius;
+    let heatFactor = parseFloat(heatFactorInput.value);
+    let coolFactor = parseFloat(coolFactorInput.value);
+    let heatCoolMode = 'none'; // 'none', 'heat', 'cool'
+    
+    const minRadius = 4;
+    const maxRadius = 8;
+    const epsilon = 0.1;
+    
+    // 色グループ設定
+    const initialGroupColors = ['#FF6B6B', '#4ECDC4', '#45B7D1'];
+    let groupSettings = initialGroupColors.map((color, index) => ({
+        id: index,
+        color: color,
+        applyGravity: true,
+        enableCollision: true,
+        density: 1.0
+    }));
+    
+    let molecules = [];
+    let animationFrameId;
+    
+    // --- マウス・タッチ・キーボード状態管理 ---
+    let isInteracting = false; // マウス/タッチ操作中フラグ
+    let activePointerId = null; // 操作中のポインターID
+    let interactingMolecule = null; // 操作中の分子
+    let pointerX = -1; // マウス/タッチのX座標
+    let pointerY = -1; // マウス/タッチのY座標
+    let isShiftPressed = false;
+    let isCtrlPressed = false;
+    
+    // --- キャンバスサイズ設定 ---
+    function resizeCanvas() {
+        const controlWidth = 270; // コントロール幅調整
+        canvas.width = Math.max(100, window.innerWidth - controlWidth);
+        canvas.height = Math.max(100, window.innerHeight * 0.95);
+    }
+    
+    // --- 分子クラス ---
+    class Molecule {
+        constructor(x, y, vx, vy, radius, groupIndex) {
+            this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+            this.radius = radius; this.groupIndex = groupIndex;
+            const settings = groupSettings[groupIndex];
+            this.color = settings.color;
+            this.density = settings.density;
+            this.mass = this.density * Math.PI * this.radius * this.radius;
+            this.invMass = this.mass > 0 ? 1.0 / this.mass : 0;
+            this.applyGravity = settings.applyGravity;
+            this.enableCollision = settings.enableCollision;
+            this.kineticEnergy = 0; this.fx = 0; this.fy = 0;
+            this.isInteracting = false; // 掴まれているか/操作対象か
+            this.originalColor = this.color; // 元の色を保持
+        }
+    
+        resetForce() { this.fx = 0; this.fy = 0; }
+    
+        applyForce(deltaTime = 1) {
+            if (this.mass <= 0 || this.isInteracting) return; // 操作中は無視
+            const ax = this.fx * this.invMass; const ay = this.fy * this.invMass;
+            this.vx += ax * deltaTime; this.vy += ay * deltaTime;
+        }
+    
+        draw(context) {
+            context.fillStyle = this.isInteracting ? '#FFFF00' : this.color; // 操作中なら色変更
+            context.beginPath(); context.arc(this.x, this.y, this.radius, 0, Math.PI * 2); context.fill(); context.closePath();
+    
+            // 速度ベクトル描画
+            if (showVelocityVectors && !this.isInteracting) {
+                const endX = this.x + this.vx * velocityVectorScale; const endY = this.y + this.vy * velocityVectorScale;
+                context.beginPath(); context.moveTo(this.x, this.y); context.lineTo(endX, endY);
+                context.strokeStyle = 'rgba(0, 0, 0, 0.6)'; context.lineWidth = 1; context.stroke();
+                 // 矢印の先端を描画 (オプション)
+                 const angle = Math.atan2(this.vy, this.vx); const arrowSize = 4;
+                 context.beginPath(); context.moveTo(endX, endY);
+                 context.lineTo(endX - arrowSize * Math.cos(angle - Math.PI / 6), endY - arrowSize * Math.sin(angle - Math.PI / 6));
+                 context.moveTo(endX, endY);
+                 context.lineTo(endX - arrowSize * Math.cos(angle + Math.PI / 6), endY - arrowSize * Math.sin(angle + Math.PI / 6));
+                 context.stroke();
+            }
+        }
+    
+        updatePosition(deltaTime = 1) {
+            if (!this.isInteracting) { // 操作中は移動しない
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+            }
+        }
+    
+        handleWallCollisions(canvasElement) {
+            if (this.isInteracting) return; // 操作中は無視
+            // 左壁 or 右壁
+            if (this.x - this.radius < 0) { this.x = this.radius; this.vx *= -restitution; }
+            else if (this.x + this.radius > canvasElement.width) { this.x = canvasElement.width - this.radius; this.vx *= -restitution; }
+            // 上壁 or 下壁
+            if (this.y - this.radius < 0) { this.y = this.radius; this.vy *= -restitution; }
+            else if (this.y + this.radius > canvasElement.height) { this.y = canvasElement.height - this.radius; this.vy *= -restitution; this.vx *= 0.99; }
+        }
+    
+        calculateKineticEnergy() {
+            this.kineticEnergy = 0.5 * this.mass * (this.vx * this.vx + this.vy * this.vy);
+        }
+    
+        checkCollision(otherMolecule) {
+            if (this.isInteracting || otherMolecule.isInteracting || !this.enableCollision || !otherMolecule.enableCollision) return false; // 操作中は衝突しない
+            const dx = otherMolecule.x - this.x; const dy = otherMolecule.y - this.y;
+            const distanceSquared = dx * dx + dy * dy; const radiusSum = this.radius + otherMolecule.radius;
+            return distanceSquared > epsilon * epsilon && distanceSquared < radiusSum * radiusSum;
+        }
+    
+        resolveCollision(otherMolecule) {
+             if (this.isInteracting || otherMolecule.isInteracting || !this.enableCollision || !otherMolecule.enableCollision) return; // 操作中は無視
+    
+            const dx = otherMolecule.x - this.x; const dy = otherMolecule.y - this.y;
+            let distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance < epsilon) { // ほぼ重なっている場合
+                 const angle = Math.random() * Math.PI * 2;
+                 this.x -= Math.cos(angle) * epsilon; this.y -= Math.sin(angle) * epsilon;
+                 otherMolecule.x += Math.cos(angle) * epsilon; otherMolecule.y += Math.sin(angle) * epsilon;
+                 distance = epsilon * 2;
+            }
+    
+            // 位置の補正
+            const overlap = (this.radius + otherMolecule.radius) - distance;
+            if (overlap > 0) {
+                const totalInvMass = this.invMass + otherMolecule.invMass;
+                if (totalInvMass <= 0) return;
+                const correctionFactor = overlap / distance / totalInvMass;
+                const correctionX = dx * correctionFactor; const correctionY = dy * correctionFactor;
+                this.x -= correctionX * this.invMass; this.y -= correctionY * this.invMass;
+                otherMolecule.x += correctionX * otherMolecule.invMass; otherMolecule.y += correctionY * otherMolecule.invMass;
+            }
+    
+            // 速度の計算
+            const normalX = dx / distance; const normalY = dy / distance;
+            const dvx = this.vx - otherMolecule.vx; const dvy = this.vy - otherMolecule.vy;
+            const relativeVelocityNormal = dvx * normalX + dvy * normalY;
+    
+            if (relativeVelocityNormal > 0) return; // すでに離れている
+    
+            const impulseMagnitude = -(1 + restitution) * relativeVelocityNormal / (this.invMass + otherMolecule.invMass);
+            const impulseX = impulseMagnitude * normalX; const impulseY = impulseMagnitude * normalY;
+    
+            this.vx += impulseX * this.invMass; this.vy += impulseY * this.invMass;
+            otherMolecule.vx -= impulseX * otherMolecule.invMass; otherMolecule.vy -= impulseY * otherMolecule.invMass;
+        }
+    }
+    
+    
+    // --- UI生成・更新 ---
+    function setupGroupControls() {
+        groupControlsContainer.innerHTML = ''; // クリア
+        groupSettings.forEach(group => {
+            const div = document.createElement('div'); div.classList.add('group-controls');
+            const title = document.createElement('h5');
+            const colorInput = document.createElement('input'); colorInput.type = 'color'; colorInput.value = group.color; colorInput.id = `group-${group.id}-color`;
+            colorInput.addEventListener('input', (e) => { group.color = e.target.value; updateMoleculeVisuals(group.id); });
+            title.appendChild(document.createTextNode(`グループ ${group.id + 1}`)); title.appendChild(colorInput); div.appendChild(title);
+    
+            const densityLabel = document.createElement('label'); densityLabel.htmlFor = `group-${group.id}-density`; densityLabel.textContent = '密度:';
+            const densityInput = document.createElement('input'); densityInput.type = 'number'; densityInput.value = group.density.toFixed(2); densityInput.min = "0.1"; densityInput.max = "10"; densityInput.step = "0.1"; densityInput.id = `group-${group.id}-density`;
+            densityInput.addEventListener('change', (e) => { group.density = parseFloat(e.target.value) || 1.0; updateMoleculeVisuals(group.id); });
+            densityLabel.appendChild(densityInput); div.appendChild(densityLabel); div.appendChild(document.createElement('br'));
+    
+            const gravityLabel = document.createElement('label'); const gravityCheck = document.createElement('input'); gravityCheck.type = 'checkbox'; gravityCheck.checked = group.applyGravity; gravityCheck.id = `group-${group.id}-gravity`;
+            gravityCheck.addEventListener('change', (e) => { group.applyGravity = e.target.checked; updateMoleculePhysicsProperties(group.id); });
+            gravityLabel.appendChild(gravityCheck); gravityLabel.appendChild(document.createTextNode(' 重力を適用')); div.appendChild(gravityLabel);
+    
+            const collisionLabel = document.createElement('label'); const collisionCheck = document.createElement('input'); collisionCheck.type = 'checkbox'; collisionCheck.checked = group.enableCollision; collisionCheck.id = `group-${group.id}-collision`;
+            collisionCheck.addEventListener('change', (e) => { group.enableCollision = e.target.checked; updateMoleculePhysicsProperties(group.id); });
+            collisionLabel.appendChild(collisionCheck); collisionLabel.appendChild(document.createTextNode(' 衝突を有効化')); div.appendChild(collisionLabel);
+    
+            groupControlsContainer.appendChild(div);
+        });
+    }
+    
+    function updateMoleculeVisuals(groupIndex) {
+        const settings = groupSettings[groupIndex];
+        molecules.forEach(mol => {
+            if (mol.groupIndex === groupIndex) {
+                mol.color = settings.color; mol.originalColor = settings.color;
+                mol.density = settings.density; mol.mass = mol.density * Math.PI * mol.radius * mol.radius;
+                mol.invMass = mol.mass > 0 ? 1.0 / mol.mass : 0;
+            }
+        });
+    }
+    
+    function updateMoleculePhysicsProperties(groupIndex) {
+        const settings = groupSettings[groupIndex];
+         molecules.forEach(mol => {
+            if (mol.groupIndex === groupIndex) {
+                mol.applyGravity = settings.applyGravity; mol.enableCollision = settings.enableCollision;
+            }
+        });
+    }
+    
+    
+    // --- 初期化関数 ---
+    function init() {
+        if (animationFrameId) { cancelAnimationFrame(animationFrameId); }
+        molecules = [];
+    
+        // UIから設定値読み込み
+        numMolecules = parseInt(numMoleculesInput.value);
+        maxInitialSpeed = parseFloat(maxSpeedInput.value);
+        restitution = parseFloat(restitutionInput.value);
+        gravity = gravityToggle.checked ? parseFloat(gravityForceInput.value) : 0;
+        interactionEnabled = interactionToggle.checked;
+        interactionConstant = parseFloat(interactionConstInput.value);
+        interactionRange = parseFloat(interactionRangeInput.value);
+        interactionRangeSq = interactionRange * interactionRange;
+        showVelocityVectors = velocityVectorToggle.checked;
+        velocityVectorScale = parseFloat(vectorScaleInput.value);
+        isHeatCoolEnabled = heatCoolToggle.checked;
+        heatCoolRadius = parseFloat(heatCoolRadiusInput.value); heatCoolRadiusSq = heatCoolRadius * heatCoolRadius;
+        heatFactor = parseFloat(heatFactorInput.value); coolFactor = parseFloat(coolFactorInput.value);
+        heatCoolMode = 'none'; // モードリセット
+        updateModeButtons(); // ボタンの見た目更新
+    
+        perfWarning.style.display = interactionEnabled && numMolecules > 50 ? 'block' : 'none';
+        resizeCanvas();
+        setupGroupControls();
+    
+        // 分子生成
+        for (let i = 0; i < numMolecules; i++) {
+            const radius = Math.random() * (maxRadius - minRadius) + minRadius;
+            const groupIndex = i % groupSettings.length;
+            let x, y, overlapping; let attempts = 0;
+            do {
+                overlapping = false;
+                x = Math.random() * (canvas.width - radius * 2) + radius;
+                y = Math.random() * (canvas.height - radius * 2) + radius;
+                for (let j = 0; j < molecules.length; j++) {
+                    const dx = x - molecules[j].x; const dy = y - molecules[j].y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < radius + molecules[j].radius + 1) { overlapping = true; break; }
+                }
+                attempts++;
+            } while (overlapping && attempts < 100);
+             if (attempts >= 100) { // 重なり回避失敗時
+                 x = Math.random() * (canvas.width - radius * 2) + radius;
+                 y = Math.random() * (canvas.height - radius * 2) + radius;
+             }
+    
+            const angle = Math.random() * Math.PI * 2; const speed = Math.random() * maxInitialSpeed;
+            const vx = Math.cos(angle) * speed; const vy = Math.sin(angle) * speed;
+            molecules.push(new Molecule(x, y, vx, vy, radius, groupIndex));
+         }
+    
+        // ポインター/キー状態リセット
+        isInteracting = false;
+        activePointerId = null;
+        interactingMolecule = null;
+        canvas.classList.remove('grabbing');
+        isShiftPressed = false; isCtrlPressed = false;
+    
+        animate();
+    }
+    
+    // --- アニメーションループ関数 ---
+    function animate() {
+        animationFrameId = requestAnimationFrame(animate);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        let totalKineticEnergy = 0;
+    
+        // --- 加熱/冷却処理 ---
+        const isHeatingByKey = isShiftPressed && !isCtrlPressed;
+        const isCoolingByKey = isCtrlPressed && !isShiftPressed;
+        const isHeatingByMode = heatCoolMode === 'heat' && isInteracting && !interactingMolecule; // モード操作中か
+        const isCoolingByMode = heatCoolMode === 'cool' && isInteracting && !interactingMolecule; // モード操作中か
+    
+        const shouldHeatCool = isHeatCoolEnabled &&
+                               (isHeatingByKey || isCoolingByKey || isHeatingByMode || isCoolingByMode) &&
+                               pointerX >= 0;
+    
+        if (shouldHeatCool) {
+            const factor = (isHeatingByKey || isHeatingByMode) ? heatFactor : coolFactor;
+            molecules.forEach(mol => {
+                if (mol.isInteracting) return; // 分子ドラッグ中は対象外
+                const dx = mol.x - pointerX; const dy = mol.y - pointerY;
+                const distSq = dx * dx + dy * dy;
+                if (distSq < heatCoolRadiusSq) {
+                    mol.vx *= factor; mol.vy *= factor;
+                }
+            });
+    
+             // 加熱/冷却範囲の描画
+             ctx.beginPath(); ctx.arc(pointerX, pointerY, heatCoolRadius, 0, Math.PI * 2);
+             ctx.fillStyle = (isHeatingByKey || isHeatingByMode) ? 'rgba(255, 100, 100, 0.15)' : 'rgba(100, 100, 255, 0.15)';
+             ctx.fill();
+             ctx.strokeStyle = (isHeatingByKey || isHeatingByMode) ? 'rgba(255, 0, 0, 0.3)' : 'rgba(0, 0, 255, 0.3)';
+             ctx.lineWidth = 1; ctx.stroke();
+        }
+    
+    
+        // 1. 力の計算と蓄積
+        molecules.forEach(mol => { if (!mol.isInteracting) mol.resetForce(); }); // 操作中の分子は力をリセットしない
+    
+        //   a. 重力
+        if (gravity !== 0) {
+            molecules.forEach(mol => {
+                if (mol.applyGravity && mol.mass > 0 && !mol.isInteracting) { // 操作中でない分子のみ
+                    mol.fy += gravity * mol.mass;
+                }
+            });
+        }
+    
+        //   b. 分子間力
+        if (interactionEnabled && interactionConstant !== 0) {
+            for (let i = 0; i < molecules.length; i++) {
+                const mol1 = molecules[i];
+                if (mol1.isInteracting) continue; // 操作中の分子は力の計算元にならない
+                for (let j = i + 1; j < molecules.length; j++) {
+                    const mol2 = molecules[j];
+                    if (mol2.isInteracting) continue; // 操作中の分子は力の計算先にならない
+    
+                    const dx = mol2.x - mol1.x; const dy = mol2.y - mol1.y;
+                    const distSq = dx * dx + dy * dy;
+    
+                    if (distSq > epsilon * epsilon && distSq < interactionRangeSq) {
+                        const dist = Math.sqrt(distSq);
+                        const forceMagnitude = interactionConstant / (dist + epsilon);
+                        const forceX = forceMagnitude * (dx / dist); const forceY = forceMagnitude * (dy / dist);
+                        mol1.fx -= forceX; mol1.fy -= forceY;
+                        mol2.fx += forceX; mol2.fy += forceY;
+                    }
+                }
+            }
+        }
+    
+        // 2. 力の適用
+        molecules.forEach(mol => mol.applyForce()); // applyForce内で isInteracting をチェック
+    
+        // 3. 位置の更新
+        molecules.forEach(mol => mol.updatePosition()); // updatePosition内で isInteracting をチェック
+    
+        // 4. 衝突処理
+        const substeps = 2;
+        for (let k = 0; k < substeps; k++) {
+            // 分子間衝突
+            for (let i = 0; i < molecules.length; i++) {
+                 // checkCollision/resolveCollision内で isInteracting をチェック
+                 if (!molecules[i].enableCollision) continue;
+                for (let j = i + 1; j < molecules.length; j++) {
+                    if (!molecules[j].enableCollision) continue;
+                    if (molecules[i].checkCollision(molecules[j])) {
+                        molecules[i].resolveCollision(molecules[j]);
+                    }
+                }
+            }
+            // 壁衝突
+            molecules.forEach(mol => mol.handleWallCollisions(canvas)); // handleWallCollisions内で isInteracting をチェック
+        }
+    
+    
+        // 5. 描画 & 運動エネルギー計算
+        molecules.forEach(mol => {
+            mol.draw(ctx);
+            mol.calculateKineticEnergy();
+            if (!mol.isInteracting) { // 操作中でない分子のエネルギーのみ合計
+                 totalKineticEnergy += mol.kineticEnergy;
+            }
+        });
+    
+        // 6. 温度表示
+        const nonInteractingCount = molecules.filter(m => !m.isInteracting).length;
+        if (nonInteractingCount > 0) {
+            const averageKineticEnergy = totalKineticEnergy / nonInteractingCount;
+            temperatureDisplay.textContent = averageKineticEnergy.toFixed(2);
+        } else if (molecules.length > 0) {
+             temperatureDisplay.textContent = '0.00 (Interacting)';
+        } else {
+            temperatureDisplay.textContent = '0.00';
+        }
+    }
+    
+    // --- イベント処理 ---
+    
+    // ポインター座標取得ヘルパー
+    function getPointerPos(canvasEl, evt) {
+        const rect = canvasEl.getBoundingClientRect();
+        let clientX, clientY;
+        if (evt.touches && evt.touches.length > 0) {
+            clientX = evt.touches[0].clientX; clientY = evt.touches[0].clientY;
+        } else if (evt.changedTouches && evt.changedTouches.length > 0) {
+            clientX = evt.changedTouches[0].clientX; clientY = evt.changedTouches[0].clientY;
+        } else {
+            clientX = evt.clientX; clientY = evt.clientY;
+        }
+        return { x: clientX - rect.left, y: clientY - rect.top };
+    }
+    
+    // 操作開始 (mousedown / touchstart)
+    function handleInteractionStart(evt) {
+        if (isInteracting) return; // すでに操作中なら無視
+    
+        const pos = getPointerPos(canvas, evt);
+        pointerX = pos.x; pointerY = pos.y;
+        activePointerId = evt.pointerId ?? (evt.touches ? evt.touches[0].identifier : null);
+    
+        // 加熱/冷却モードの場合
+        if (isHeatCoolEnabled && heatCoolMode !== 'none') {
+            isInteracting = true; // 操作開始
+            evt.preventDefault();
+            return;
+        }
+    
+        // 通常モード (分子ドラッグ)
+        for (let i = molecules.length - 1; i >= 0; i--) {
+            const mol = molecules[i];
+            const dx = pointerX - mol.x; const dy = pointerY - mol.y;
+            if (dx * dx + dy * dy < mol.radius * mol.radius * 1.5) { // タッチ判定緩め
+                isInteracting = true;
+                interactingMolecule = mol;
+                mol.isInteracting = true;
+                mol.vx = 0; mol.vy = 0;
+                canvas.classList.add('grabbing');
+                evt.preventDefault();
+                break;
+            }
+        }
+    }
+    
+    // 操作中 (mousemove / touchmove)
+    function handleInteractionMove(evt) {
+        // 関係ないポインターからのイベントは無視 (マルチタッチ対策)
+        let currentPointerId = null;
+        let isTouchEvent = false;
+        if (evt.pointerId !== undefined) {
+            currentPointerId = evt.pointerId;
+        } else if (evt.touches && evt.touches.length > 0) {
+            currentPointerId = evt.touches[0].identifier;
+            isTouchEvent = true;
+        }
+        // マウスイベント(pointerId undefined) or IDが一致するタッチイベントのみ処理
+        if (!isInteracting || (activePointerId !== null && activePointerId !== currentPointerId)) return;
+    
+        const pos = getPointerPos(canvas, evt);
+        pointerX = pos.x; pointerY = pos.y;
+    
+        // 分子ドラッグ中
+        if (interactingMolecule) {
+            interactingMolecule.x = pointerX;
+            interactingMolecule.y = pointerY;
+            evt.preventDefault();
+        }
+        // 加熱/冷却操作中
+        else if (isHeatCoolEnabled && heatCoolMode !== 'none') {
+             evt.preventDefault();
+        }
+    }
+    
+    // 操作終了 (mouseup / touchend / touchcancel)
+    function handleInteractionEnd(evt) {
+        // 関係ないポインターからのイベントは無視 (マルチタッチ対策)
+        let currentPointerId = null;
+         if (evt.pointerId !== undefined) {
+            currentPointerId = evt.pointerId;
+        } else if (evt.changedTouches && evt.changedTouches.length > 0) {
+            currentPointerId = evt.changedTouches[0].identifier;
+        }
+         if (!isInteracting || (activePointerId !== null && activePointerId !== currentPointerId)) return;
+    
+        if (interactingMolecule) {
+            interactingMolecule.isInteracting = false; // 分子の操作状態を解除
+            interactingMolecule = null;
+            canvas.classList.remove('grabbing');
+        }
+    
+        isInteracting = false; // 操作終了
+        activePointerId = null;
+        // pointerX, pointerY は mouseout/touchcancel でリセット
+    }
+    
+    // マウスイベントリスナー
+    canvas.addEventListener('mousedown', handleInteractionStart);
+    canvas.addEventListener('mousemove', handleInteractionMove);
+    canvas.addEventListener('mouseup', handleInteractionEnd);
+    canvas.addEventListener('mouseout', (e) => {
+        pointerX = -1; pointerY = -1;
+        if (isInteracting && activePointerId === null) { // マウス操作中だった場合
+            handleInteractionEnd(e);
+        }
+    });
+    
+    // タッチイベントリスナー
+    canvas.addEventListener('touchstart', handleInteractionStart);
+    canvas.addEventListener('touchmove', handleInteractionMove);
+    canvas.addEventListener('touchend', handleInteractionEnd);
+    canvas.addEventListener('touchcancel', (e) => {
+        pointerX = -1; pointerY = -1;
+        handleInteractionEnd(e); // touchendと同様の処理
+    });
+    
+    // キーボードイベントリスナー
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Shift') {
+            isShiftPressed = true;
+            if(isHeatCoolEnabled && heatCoolMode === 'none' && !isInteracting) e.preventDefault(); // 通常モードでのShift+スクロール防止
+        } else if (e.key === 'Control') {
+            isCtrlPressed = true;
+             if(isHeatCoolEnabled && heatCoolMode === 'none' && !isInteracting) e.preventDefault(); // 通常モードでのCtrl+スクロール/ズーム防止
+        }
+    });
+    window.addEventListener('keyup', (e) => {
+        if (e.key === 'Shift') { isShiftPressed = false; }
+        else if (e.key === 'Control') { isCtrlPressed = false; }
+    });
+    
+    // 加熱/冷却モードボタンのリスナー
+    function updateModeButtons() {
+        modeNoneBtn.classList.toggle('active', heatCoolMode === 'none');
+        modeHeatBtn.classList.toggle('active', heatCoolMode === 'heat');
+        modeCoolBtn.classList.toggle('active', heatCoolMode === 'cool');
+    }
+    modeNoneBtn.addEventListener('click', () => { heatCoolMode = 'none'; updateModeButtons(); });
+    modeHeatBtn.addEventListener('click', () => { heatCoolMode = 'heat'; updateModeButtons(); });
+    modeCoolBtn.addEventListener('click', () => { heatCoolMode = 'cool'; updateModeButtons(); });
+    
+    // その他のイベントリスナー
+    window.addEventListener('resize', init);
+    resetButton.addEventListener('click', init);
+    numMoleculesInput.addEventListener('change', () => { if (parseInt(numMoleculesInput.value) > 0) init(); });
+    maxSpeedInput.addEventListener('change', () => { if (parseFloat(maxSpeedInput.value) >= 0) init(); });
+    restitutionInput.addEventListener('change', () => { restitution = parseFloat(restitutionInput.value); });
+    gravityToggle.addEventListener('change', () => { gravity = gravityToggle.checked ? parseFloat(gravityForceInput.value) : 0; });
+    gravityForceInput.addEventListener('change', () => { if (gravityToggle.checked) gravity = parseFloat(gravityForceInput.value); });
+    interactionToggle.addEventListener('change', () => { interactionEnabled = interactionToggle.checked; perfWarning.style.display = interactionEnabled && numMolecules > 50 ? 'block' : 'none'; });
+    interactionConstInput.addEventListener('change', () => { interactionConstant = parseFloat(interactionConstInput.value); });
+    interactionRangeInput.addEventListener('change', () => { interactionRange = parseFloat(interactionRangeInput.value); interactionRangeSq = interactionRange * interactionRange; });
+    velocityVectorToggle.addEventListener('change', () => { showVelocityVectors = velocityVectorToggle.checked; });
+    vectorScaleInput.addEventListener('change', () => { velocityVectorScale = parseFloat(vectorScaleInput.value); });
+    heatCoolToggle.addEventListener('change', () => { isHeatCoolEnabled = heatCoolToggle.checked; });
+    heatCoolRadiusInput.addEventListener('change', () => { heatCoolRadius = parseFloat(heatCoolRadiusInput.value); heatCoolRadiusSq = heatCoolRadius * heatCoolRadius; });
+    heatFactorInput.addEventListener('change', () => { heatFactor = parseFloat(heatFactorInput.value); });
+    coolFactorInput.addEventListener('change', () => { coolFactor = parseFloat(coolFactorInput.value); });
+    
+    // --- 実行開始 ---
+    init();</script>
+</body>
+</html>
