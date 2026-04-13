@@ -167,15 +167,16 @@
             left: 15px;
             color: #00d2ff;
             font-size: 0.85rem;
-            background: rgba(10, 15, 25, 0.8);
-            padding: 10px 15px;
+            background: rgba(10, 15, 25, 0.85); /* 透明度を少し下げて見やすく */
+            padding: 12px 15px;
             border-radius: 10px;
-            border: 1px solid rgba(0, 210, 255, 0.3);
+            border: 1px solid rgba(0, 210, 255, 0.4);
             z-index: 50;
             pointer-events: none;
             backdrop-filter: blur(5px);
-            line-height: 1.6;
-            box-shadow: 0 0 15px rgba(0, 210, 255, 0.15);
+            line-height: 1.7; /* 行間を少し広げて読みやすく */
+            box-shadow: 0 0 15px rgba(0, 210, 255, 0.2);
+            min-width: 160px; /* 横幅を確保 */
         }
 
         .status-val {
@@ -187,7 +188,7 @@
 
         #sysControlHud {
             position: fixed;
-            top: 100px;
+            top: 140px; /* ★位置を 100px から 140px に下げて重なりを解消 */
             left: 15px;
             z-index: 50;
             display: flex;
@@ -352,9 +353,9 @@
 <body>
 
     <div id="statusHud">
-        SYS.TEMP : <span class="status-val" id="temperatureDisplay">0.00</span><br>
-        BIT [0] : <span class="status-val" id="count0Display">0</span><br>
-        BIT [1] : <span class="status-val val-plasma" id="count1Display">0</span>
+        システム温度 : <span class="status-val" id="temperatureDisplay">0.00</span><br>
+        通常ビット(0) : <span class="status-val" id="count0Display">0</span><br>
+        プラズマ(1) : <span class="status-val val-plasma" id="count1Display">0</span>
     </div>
     <div id="sysControlHud">
         <button id="pauseBtn" class="sys-btn" title="一時停止/再生">⏸️ 停止中</button>
